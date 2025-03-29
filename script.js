@@ -2,31 +2,34 @@
 const frontPage = document.getElementById('frontPage');
 const mainPage = document.getElementById('mainPage');
 const getStartedBtn = document.getElementById('getStartedBtn');
-const referenceStringInput = document.getElementById('referenceString');
+const refStringInput = document.getElementById('refString');
 const numFramesInput = document.getElementById('numFrames');
 const algorithmSelect = document.getElementById('algorithm');
 const runBtn = document.getElementById('runBtn');
 const stopBtn = document.getElementById('stopBtn');
 const continueBtn = document.getElementById('continueBtn');
 const resetBtn = document.getElementById('resetBtn');
+const editBtn = document.getElementById('editBtn');
+const fifoDemoBtn = document.getElementById('fifoDemoBtn');
 const statusBar = document.getElementById('statusBar');
-const faultCounter = document.getElementById('faultCounter');
-const hitCounter = document.getElementById('hitCounter');
+const pageFaultsCounter = document.getElementById('pageFaults');
+const pageHitsCounter = document.getElementById('pageHits');
+const currentRefCounter = document.getElementById('currentRef');
 const framesContainer = document.getElementById('framesContainer');
-const stepInfo = document.getElementById('stepInfo');
 
-// Globals
+// Simulation Variables
 let referenceString = [];
 let frames = [];
 let numFrames = 3;
-let algorithm = 'fifo';
+let algorithm = 'FIFO';
 let pageFaults = 0;
 let pageHits = 0;
 let currentStep = -1;
-let animationInterval;
+let simulationInterval;
 let simulationRunning = false;
 let fifoQueue = [];
 let lruStack = [];
+let lfuCounts = {};
 
 // Event Listeners
 getStartedBtn.addEventListener('click', () => {
@@ -35,14 +38,83 @@ getStartedBtn.addEventListener('click', () => {
 });
 
 runBtn.addEventListener('click', startSimulation);
-stopBtn.addEventListener('click', stopSimulation);
+stopBtn.addEventListener('click', pauseSimulation);
 continueBtn.addEventListener('click', continueSimulation);
 resetBtn.addEventListener('click', resetSimulation);
+editBtn.addEventListener('click', editSimulation);
+fifoDemoBtn.addEventListener('click', displayFIFOAnimation);
 
-// Functions
+// Animation Helper Functions
+function animatePageMovement(page, sourceElement, targetElement, isFault) {
+    // Check if elements exist
+    if (!sourceElement || !targetElement) {
+        console.error("Animation error: Source or target element is missing");
+        return;
+    }
+    
+    const floatingPage = document.createElement('div');
+    floatingPage.className = 'floating-page';
+    floatingPage.textContent = page;
+    
+    if (isFault) {
+        floatingPage.style.backgroundColor = '#ffebee';
+        floatingPage.style.color = '#f44336';
+        floatingPage.style.border = '2px solid #f44336';
+    } else {
+        floatingPage.style.backgroundColor = '#e8f5e9';
+        floatingPage.style.color = '#4CAF50';
+        floatingPage.style.border = '2px solid #4CAF50';
+    }
+    
+    document.body.appendChild(floatingPage);
+    
+    // Get source and target positions
+    const sourceRect = sourceElement.getBoundingClientRect();
+    const targetRect = targetElement.getBoundingClientRect();
+    
+    // Set initial position (fixed positioning to avoid scroll issues)
+    floatingPage.style.position = 'fixed';
+    floatingPage.style.top = `${sourceRect.top}px`;
+    floatingPage.style.left = `${sourceRect.left}px`;
+    floatingPage.style.width = `${sourceRect.width}px`;
+    floatingPage.style.height = `${sourceRect.height}px`;
+    floatingPage.style.zIndex = '9999';
+    
+    // Force reflow to ensure initial position is applied
+    void floatingPage.offsetWidth;
+    
+    // Animate to target
+    setTimeout(() => {
+        floatingPage.style.transition = 'all 0.5s ease';
+        floatingPage.style.top = `${targetRect.top}px`;
+        floatingPage.style.left = `${targetRect.left}px`;
+        floatingPage.style.width = `${targetRect.width}px`;
+        floatingPage.style.height = `${targetRect.height}px`;
+        
+        // Remove after animation
+        setTimeout(() => {
+            if (floatingPage.parentNode) {
+                floatingPage.remove();
+            }
+        }, 500);
+    }, 50);
+}
+
+function highlightCurrentStep(stepIndex) {
+    const refNumbers = document.querySelectorAll('.ref-number');
+    refNumbers.forEach((el, idx) => {
+        if (idx === stepIndex) {
+            el.classList.add('active');
+        } else {
+            el.classList.remove('active');
+        }
+    });
+}
+
+// Main Functions
 function startSimulation() {
-    // Get and validate inputs
-    const inputString = referenceStringInput.value.trim();
+    // Validate inputs
+    const inputString = refStringInput.value.trim();
     if (!inputString) {
         updateStatus('Error: Please enter a reference string', 'error');
         return;
@@ -65,167 +137,28 @@ function startSimulation() {
     // Initialize simulation
     resetSimulation(false);
     simulationRunning = true;
+    
+    // Update UI
     runBtn.disabled = true;
     stopBtn.disabled = false;
     continueBtn.disabled = true;
+    editBtn.disabled = true;
+    fifoDemoBtn.disabled = true;
     
-    updateStatus('Simulation Running...');
+    updateStatus('Simulation Running', 'running');
     
-    // Display the reference string at the top
+    // Display reference string
     displayReferenceString();
     
-    // Start animation
+    // Start simulation
     runSimulationStep();
-}
-
-function displayReferenceString() {
-    // Create a container for the reference string
-    const stringContainer = document.createElement('div');
-    stringContainer.className = 'reference-string-display';
-    stringContainer.style.display = 'flex';
-    stringContainer.style.justifyContent = 'center';
-    stringContainer.style.gap = '10px';
-    stringContainer.style.marginBottom = '20px';
-    stringContainer.style.padding = '10px';
-    stringContainer.style.backgroundColor = '#f5f5f5';
-    stringContainer.style.borderRadius = '4px';
-    
-    // Add each number as a box
-    referenceString.forEach(num => {
-        const numBox = document.createElement('div');
-        numBox.className = 'reference-number';
-        numBox.textContent = num;
-        numBox.style.width = '40px';
-        numBox.style.height = '40px';
-        numBox.style.display = 'flex';
-        numBox.style.alignItems = 'center';
-        numBox.style.justifyContent = 'center';
-        numBox.style.border = '1px solid #ccc';
-        numBox.style.borderRadius = '4px';
-        numBox.style.backgroundColor = 'white';
-        numBox.style.fontWeight = 'bold';
-        
-        stringContainer.appendChild(numBox);
-    });
-    
-    // Insert at the top of the frames container
-    framesContainer.innerHTML = '';
-    framesContainer.appendChild(stringContainer);
-}
-
-function stopSimulation() {
-    simulationRunning = false;
-    clearInterval(animationInterval);
-    stopBtn.disabled = true;
-    continueBtn.disabled = false;
-    updateStatus('Simulation Paused');
-}
-
-function continueSimulation() {
-    simulationRunning = true;
-    continueBtn.disabled = true;
-    stopBtn.disabled = false;
-    updateStatus('Simulation Running...');
-    runSimulationStep();
-}
-
-function resetSimulation(resetInputs = true) {
-    simulationRunning = false;
-    clearTimeout(animationInterval);
-    currentStep = -1;
-    pageFaults = 0;
-    pageHits = 0;
-    frames = Array(numFrames).fill(null);
-    fifoQueue = [];
-    lruStack = [];
-    
-    if (resetInputs) {
-        referenceStringInput.value = '';
-        numFramesInput.value = '3';
-        algorithmSelect.value = 'fifo';
-    }
-    
-    faultCounter.textContent = '0';
-    hitCounter.textContent = '0';
-    framesContainer.innerHTML = '';
-    updateStatus('Ready');
-    stepInfo.textContent = 'No simulation running';
-    
-    // Remove any floating pages that might be left over
-    const floatingPages = document.querySelectorAll('.floating-page');
-    floatingPages.forEach(page => page.remove());
-    
-    runBtn.disabled = false;
-    stopBtn.disabled = true;
-    continueBtn.disabled = true;
-}
-
-// Add this function to create visual feedback of pages moving between frames
-function animatePageMovement(currentPage, targetFrameIndex, isReplacement = false, rowElement) {
-    // Get the reference number to animate from
-    const referenceElements = document.querySelectorAll('.reference-number');
-    if (!referenceElements || currentStep >= referenceElements.length) return;
-    
-    const sourceElement = referenceElements[currentStep];
-    
-    // Create a floating element for animation
-    const floatingPage = document.createElement('div');
-    floatingPage.className = 'floating-page';
-    floatingPage.textContent = currentPage;
-    document.body.appendChild(floatingPage);
-    
-    // Find the target frame in the current row
-    const frameElements = rowElement.querySelectorAll('.frame');
-    if (frameElements.length <= targetFrameIndex) {
-        document.body.removeChild(floatingPage);
-        return;
-    }
-    
-    const targetFrame = frameElements[targetFrameIndex];
-    
-    const refRect = sourceElement.getBoundingClientRect();
-    const targetRect = targetFrame.getBoundingClientRect();
-    
-    // Set initial position
-    floatingPage.style.position = 'absolute';
-    floatingPage.style.top = `${refRect.top}px`;
-    floatingPage.style.left = `${refRect.left}px`;
-    floatingPage.style.width = `${refRect.width}px`;
-    floatingPage.style.height = `${refRect.height}px`;
-    floatingPage.style.display = 'flex';
-    floatingPage.style.alignItems = 'center';
-    floatingPage.style.justifyContent = 'center';
-    floatingPage.style.fontWeight = 'bold';
-    floatingPage.style.fontSize = '1.2rem';
-    floatingPage.style.backgroundColor = isReplacement ? '#f0f0f0' : 'white';
-    floatingPage.style.zIndex = '100';
-    floatingPage.style.borderRadius = '4px';
-    floatingPage.style.transition = 'all 0.6s ease-in-out';
-    
-    // Highlight the current reference
-    sourceElement.style.backgroundColor = '#e6f2ff';
-    
-    // Trigger animation to target frame
-    setTimeout(() => {
-        floatingPage.style.top = `${targetRect.top}px`;
-        floatingPage.style.left = `${targetRect.left}px`;
-        
-        // Remove the element after animation completes
-        setTimeout(() => {
-            document.body.removeChild(floatingPage);
-            
-            // Reset reference highlight
-            setTimeout(() => {
-                sourceElement.style.backgroundColor = 'white';
-            }, 300);
-        }, 700);
-    }, 50);
 }
 
 function runSimulationStep() {
     if (!simulationRunning) return;
     
     currentStep++;
+    currentRefCounter.textContent = currentStep >= referenceString.length ? '-' : referenceString[currentStep];
     
     if (currentStep >= referenceString.length) {
         simulationComplete();
@@ -238,151 +171,265 @@ function runSimulationStep() {
     let stepResult = '';
     let stepExplanation = '';
     
-    // Check if page is already in frames (hit)
+    // Highlight current reference
+    highlightCurrentStep(currentStep);
+    
+    // Check for page hit
     const pageIndex = frames.indexOf(currentPage);
     if (pageIndex !== -1) {
         // Page hit
         pageHits++;
-        hitCounter.textContent = pageHits;
+        pageHitsCounter.textContent = pageHits;
         stepResult = 'hit';
-        stepExplanation = `Page ${currentPage} is already in frame ${pageIndex + 1}`;
+        stepExplanation = `Page ${currentPage} already in Frame ${pageIndex + 1}`;
         
-        // Update LRU stack if using LRU algorithm
-        if (algorithm === 'lru') {
+        // Update LRU stack (move current page to most recent position)
+        if (algorithm === 'LRU') {
             lruStack = lruStack.filter(page => page !== currentPage);
             lruStack.push(currentPage);
         }
+        
+        // Create frame row with hit animation
+        const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult, stepExplanation);
+        
+        setTimeout(() => {
+            const hitFrame = rowElement.querySelector('.hit');
+            const activeRef = document.querySelector('.ref-number.active');
+            if (hitFrame && activeRef) {
+                animatePageMovement(currentPage, activeRef, hitFrame, false);
+            }
+        }, 300);
     } else {
         // Page fault
         pageFaults++;
-        faultCounter.textContent = pageFaults;
+        pageFaultsCounter.textContent = pageFaults;
         stepResult = 'fault';
         
-        // Find a frame to replace
         if (frames.includes(null)) {
             // Empty frame available
             const emptyIndex = frames.indexOf(null);
             frames[emptyIndex] = currentPage;
-            stepExplanation = `Page ${currentPage} loaded into empty frame ${emptyIndex + 1}`;
+            stepExplanation = `Page ${currentPage} loaded into empty Frame ${emptyIndex + 1}`;
             
-            // Create frame row first, then animate after it's in the DOM
-            const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult);
+            // Create frame row and animate
+            const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult, stepExplanation);
             
-            // Delay animation so it occurs after the frame row is created
             setTimeout(() => {
-                animatePageMovement(currentPage, emptyIndex, false, rowElement);
-            }, 200);
+                const targetFrame = rowElement.querySelectorAll('.frame')[emptyIndex];
+                const activeRef = document.querySelector('.ref-number.active');
+                if (targetFrame && activeRef) {
+                    animatePageMovement(currentPage, activeRef, targetFrame, true);
+                }
+            }, 300);
             
             // Update tracking structures
-            if (algorithm === 'fifo') {
+            if (algorithm === 'FIFO') {
                 fifoQueue.push({ page: currentPage, frameIndex: emptyIndex });
             }
-            if (algorithm === 'lru') {
+            if (algorithm === 'LRU') {
                 lruStack.push(currentPage);
             }
         } else {
             // Need to replace a page
-            if (algorithm === 'fifo') {
+            if (algorithm === 'FIFO') {
                 // FIFO replacement
                 const oldest = fifoQueue.shift();
                 replacedFrameIndex = oldest.frameIndex;
+                const replacedPage = frames[replacedFrameIndex];
                 frames[replacedFrameIndex] = currentPage;
                 fifoQueue.push({ page: currentPage, frameIndex: replacedFrameIndex });
-                stepExplanation = `Page ${framesCopy[replacedFrameIndex]} in frame ${replacedFrameIndex + 1} replaced with page ${currentPage} (FIFO)`;
+                stepExplanation = `Page ${replacedPage} replaced with ${currentPage} in Frame ${replacedFrameIndex + 1} (FIFO)`;
                 
-                // Create frame row first, then animate
-                const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult);
+                // Create frame row and animate
+                const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult, stepExplanation);
                 
                 setTimeout(() => {
-                    animatePageMovement(currentPage, replacedFrameIndex, true, rowElement);
-                }, 200);
-            } else if (algorithm === 'lru') {
+                    const targetFrame = rowElement.querySelectorAll('.frame')[replacedFrameIndex];
+                    const activeRef = document.querySelector('.ref-number.active');
+                    if (targetFrame && activeRef) {
+                        animatePageMovement(currentPage, activeRef, targetFrame, true);
+                    }
+                }, 300);
+            } else if (algorithm === 'LRU') {
                 // LRU replacement
                 const leastRecentPage = lruStack.shift();
                 replacedFrameIndex = frames.indexOf(leastRecentPage);
+                const replacedPage = frames[replacedFrameIndex];
                 frames[replacedFrameIndex] = currentPage;
                 lruStack.push(currentPage);
-                stepExplanation = `Page ${framesCopy[replacedFrameIndex]} in frame ${replacedFrameIndex + 1} replaced with page ${currentPage} (LRU)`;
+                stepExplanation = `Page ${replacedPage} replaced with ${currentPage} in Frame ${replacedFrameIndex + 1} (LRU)`;
                 
-                // Create frame row first, then animate
-                const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult);
+                // Create frame row and animate
+                const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult, stepExplanation);
                 
                 setTimeout(() => {
-                    animatePageMovement(currentPage, replacedFrameIndex, true, rowElement);
-                }, 200);
-            } else if (algorithm === 'optimal') {
+                    const targetFrame = rowElement.querySelectorAll('.frame')[replacedFrameIndex];
+                    const activeRef = document.querySelector('.ref-number.active');
+                    if (targetFrame && activeRef) {
+                        animatePageMovement(currentPage, activeRef, targetFrame, true);
+                    }
+                }, 300);
+            } else if (algorithm === 'Optimal') {
                 // Optimal replacement
-                const futureIndices = frames.map(frame => {
-                    const nextOccurrence = referenceString.slice(currentStep + 1).indexOf(frame);
-                    return nextOccurrence === -1 ? Infinity : nextOccurrence;
-                });
+                let farthestNextUse = -1;
+                let pageToReplace = null;
                 
-                replacedFrameIndex = futureIndices.indexOf(Math.max(...futureIndices));
+                // Check each frame for future usage
+                for (let i = 0; i < frames.length; i++) {
+                    const page = frames[i];
+                    // Find next occurrence of this page in future references
+                    let nextUse = referenceString.slice(currentStep + 1).indexOf(page);
+                    
+                    // If page won't be used again, it's the best candidate
+                    if (nextUse === -1) {
+                        pageToReplace = page;
+                        replacedFrameIndex = i;
+                        break;
+                    }
+                    
+                    // Track the page with farthest future use
+                    if (nextUse > farthestNextUse) {
+                        farthestNextUse = nextUse;
+                        pageToReplace = page;
+                        replacedFrameIndex = i;
+                    }
+                }
+                
+                // Replace the selected page
+                const replacedPage = frames[replacedFrameIndex];
                 frames[replacedFrameIndex] = currentPage;
-                stepExplanation = `Page ${framesCopy[replacedFrameIndex]} in frame ${replacedFrameIndex + 1} replaced with page ${currentPage} (Optimal)`;
+                stepExplanation = `Page ${replacedPage} replaced with ${currentPage} in Frame ${replacedFrameIndex + 1} (Optimal)`;
                 
-                // Create frame row first, then animate
-                const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult);
+                // Create frame row and animate
+                const rowElement = createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult, stepExplanation);
                 
                 setTimeout(() => {
-                    animatePageMovement(currentPage, replacedFrameIndex, true, rowElement);
-                }, 200);
+                    const targetFrame = rowElement.querySelectorAll('.frame')[replacedFrameIndex];
+                    const activeRef = document.querySelector('.ref-number.active');
+                    if (targetFrame && activeRef) {
+                        animatePageMovement(currentPage, activeRef, targetFrame, true);
+                    }
+                }, 300);
             }
         }
     }
     
-    // If we didn't already create the frame row in the replacements, create it now (hits)
-    if (pageIndex !== -1 || !simulationRunning) {
-        createFrameRow(currentPage, framesCopy, frames, replacedFrameIndex, stepResult);
-    }
-    
-    // Update step info
-    stepInfo.innerHTML = `<strong>Step ${currentStep + 1}:</strong> Referencing Page ${currentPage} - ${stepResult.toUpperCase()} - ${stepExplanation}`;
-    
-    // Continue to next step after delay
-    animationInterval = setTimeout(runSimulationStep, 1500); // Increased delay to account for animations
+    // Continue to next step
+    simulationInterval = setTimeout(runSimulationStep, 1500);
 }
 
-function createFrameRow(currentPage, oldFrames, newFrames, replacedIndex, result) {
+function pauseSimulation() {
+    simulationRunning = false;
+    clearTimeout(simulationInterval);
+    stopBtn.disabled = true;
+    continueBtn.disabled = false;
+    updateStatus('Simulation Paused', 'paused');
+}
+
+function continueSimulation() {
+    simulationRunning = true;
+    continueBtn.disabled = true;
+    stopBtn.disabled = false;
+    updateStatus('Simulation Running', 'running');
+    runSimulationStep();
+}
+
+function resetSimulation(resetInputs = true) {
+    simulationRunning = false;
+    clearTimeout(simulationInterval);
+    currentStep = -1;
+    pageFaults = 0;
+    pageHits = 0;
+    frames = Array(numFrames).fill(null);
+    fifoQueue = [];
+    lruStack = [];
+    lfuCounts = {};
+    
+    if (resetInputs) {
+        refStringInput.value = '';
+        numFramesInput.value = '3';
+        algorithmSelect.value = 'FIFO';
+    }
+    
+    pageFaultsCounter.textContent = '0';
+    pageHitsCounter.textContent = '0';
+    currentRefCounter.textContent = '-';
+    framesContainer.innerHTML = '';
+    updateStatus('Ready');
+    
+    // Remove floating pages
+    document.querySelectorAll('.floating-page').forEach(el => el.remove());
+    
+    // Update button states
+    runBtn.disabled = false;
+    stopBtn.disabled = true;
+    continueBtn.disabled = true;
+    editBtn.disabled = false;
+    fifoDemoBtn.disabled = false;
+}
+
+function editSimulation() {
+    resetSimulation(false);
+    updateStatus('Edit Mode - Adjust parameters and run again');
+}
+
+function updateStatus(message, type = '') {
+    statusBar.textContent = message;
+    statusBar.className = 'status-bar';
+    
+    if (type) {
+        statusBar.classList.add(type);
+    }
+}
+
+function displayReferenceString() {
+    const refStringDisplay = document.createElement('div');
+    refStringDisplay.className = 'ref-string-display';
+    
+    referenceString.forEach((num, idx) => {
+        const numElement = document.createElement('div');
+        numElement.className = 'ref-number';
+        numElement.textContent = num;
+        refStringDisplay.appendChild(numElement);
+    });
+    
+    framesContainer.innerHTML = '';
+    framesContainer.appendChild(refStringDisplay);
+}
+
+function createFrameRow(currentPage, oldFrames, newFrames, replacedIndex, result, explanation) {
     const rowDiv = document.createElement('div');
     rowDiv.className = 'frame-row';
-    rowDiv.style.display = 'flex';
-    rowDiv.style.flexDirection = 'column';
-    rowDiv.style.alignItems = 'center';
-    rowDiv.style.marginBottom = '20px';
-    rowDiv.style.padding = '15px';
-    rowDiv.style.backgroundColor = '#f9f9f9';
-    rowDiv.style.borderRadius = '8px';
-    rowDiv.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
     
-    // Create frames container (horizontal)
+    // Create step info
+    const stepInfo = document.createElement('div');
+    stepInfo.className = 'step-info';
+    stepInfo.innerHTML = `<strong>Step ${currentStep + 1}:</strong> ${explanation}`;
+    rowDiv.appendChild(stepInfo);
+    
+    // Create frames container
     const framesDiv = document.createElement('div');
-    framesDiv.style.display = 'flex';
-    framesDiv.style.justifyContent = 'center';
-    framesDiv.style.gap = '15px';
-    framesDiv.style.marginBottom = '10px';
+    framesDiv.className = 'frames-row';
     
-    // Add frames with smoother transitions
     for (let i = 0; i < numFrames; i++) {
         const frameDiv = document.createElement('div');
         frameDiv.className = 'frame';
         
-        // Apply empty frame styling
         if (newFrames[i] === null) {
-            frameDiv.classList.add('empty-frame');
+            frameDiv.classList.add('empty');
+            frameDiv.textContent = '-';
+        } else {
+            frameDiv.textContent = newFrames[i];
         }
         
         if (i === replacedIndex) {
-            frameDiv.classList.add('replace-highlight');
-            // Add animation class for replaced pages
-            frameDiv.style.animation = 'replace-animation 0.8s ease-in-out';
+            frameDiv.classList.add('replaced');
         }
         
-        frameDiv.textContent = newFrames[i] === null ? '' : newFrames[i];
-        
-        // If this is a newly added page (not a replacement), add animation class
-        if (oldFrames[i] === null && newFrames[i] !== null && i !== replacedIndex) {
-            frameDiv.style.animation = 'page-enter 0.8s ease-out';
+        if (result === 'hit' && newFrames[i] === currentPage) {
+            frameDiv.classList.add('hit');
+        } else if (result === 'fault' && newFrames[i] === currentPage) {
+            frameDiv.classList.add('fault');
         }
         
         framesDiv.appendChild(frameDiv);
@@ -390,58 +437,224 @@ function createFrameRow(currentPage, oldFrames, newFrames, replacedIndex, result
     
     rowDiv.appendChild(framesDiv);
     
-    // Add result (hit/fault) with animation
+    // Create result indicator
     const resultDiv = document.createElement('div');
     resultDiv.className = `result ${result}`;
-    
-    // Show "FAULT" for faults and empty string for hits
-    resultDiv.textContent = result === 'fault' ? 'FAULT' : '';
-    
-    resultDiv.style.opacity = '0';
-    resultDiv.style.transform = 'scale(0.8)';
+    resultDiv.textContent = result === 'hit' ? 'HIT' : 'FAULT';
     rowDiv.appendChild(resultDiv);
     
     framesContainer.appendChild(rowDiv);
     
-    // Trigger animations with small delays for sequential effect
-    setTimeout(() => {
-        resultDiv.style.transition = 'all 0.4s ease-out';
-        resultDiv.style.opacity = '1';
-        resultDiv.style.transform = 'scale(1)';
-    }, 300);
+    // Set initial opacity and animate fade in
+    rowDiv.style.opacity = '0';
+    rowDiv.style.animation = 'fadeIn 0.5s forwards';
     
-    rowDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    // Scroll to show new row
+    setTimeout(() => {
+        rowDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
     
     return rowDiv;
 }
 
 function simulationComplete() {
     simulationRunning = false;
-    clearTimeout(animationInterval);
-    runBtn.disabled = false;
-    stopBtn.disabled = true;
-    continueBtn.disabled = true;
+    clearTimeout(simulationInterval);
     
     // Calculate hit ratio
     const totalReferences = pageFaults + pageHits;
-    const hitRatio = (pageHits / totalReferences) * 100;
+    const hitRatio = totalReferences > 0 ? (pageHits / totalReferences * 100) : 0;
     
-    updateStatus('Simulation Complete');
-    stepInfo.innerHTML = `<strong>Simulation Complete!</strong><br>
-                         Total References: ${totalReferences}<br>
-                         Page Hits: ${pageHits}<br>
-                         Page Faults: ${pageFaults}<br>
-                         Hit Ratio: ${hitRatio.toFixed(2)}%`;
+    // Update UI
+    runBtn.disabled = false;
+    stopBtn.disabled = true;
+    continueBtn.disabled = true;
+    editBtn.disabled = false;
+    fifoDemoBtn.disabled = false;
+    
+    updateStatus('Simulation Complete', 'complete');
+    
+    // Add summary
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'summary';
+    summaryDiv.innerHTML = `
+        <h3>Simulation Summary</h3>
+        <p>Algorithm: ${algorithm}</p>
+        <p>Total References: ${totalReferences}</p>
+        <p>Page Hits: ${pageHits}</p>
+        <p>Page Faults: ${pageFaults}</p>
+        <p>Hit Ratio: ${hitRatio.toFixed(2)}%</p>
+    `;
+    framesContainer.appendChild(summaryDiv);
+    summaryDiv.scrollIntoView({ behavior: 'smooth' });
 }
 
-function updateStatus(message, type = 'info') {
-    statusBar.textContent = message;
+function displayFIFOAnimation() {
+    const demoReferenceString = [7, 0, 1, 2, 0, 3, 0, 4, 2, 3, 0, 3, 2, 1, 2];
+    const demoNumFrames = 3;
+    let demoFrames = Array(demoNumFrames).fill(null);
+    let demoFifoQueue = [];
+    let demoHits = 0;
+    let demoFaults = 0;
     
-    if (type === 'error') {
-        statusBar.style.backgroundColor = '#ffebee';
-        statusBar.style.color = '#c62828';
-    } else {
-        statusBar.style.backgroundColor = '#f0f0f0';
-        statusBar.style.color = 'black';
+    // Reset simulation for demo
+    resetSimulation(false);
+    document.getElementById('pageFaults').textContent = '0';
+    document.getElementById('pageHits').textContent = '0';
+    document.getElementById('currentRef').textContent = '-';
+    framesContainer.innerHTML = '';
+    
+    // Create container for the animation
+    const animationContainer = document.createElement('div');
+    animationContainer.className = 'fifo-animation';
+    framesContainer.appendChild(animationContainer);
+    
+    // Display title
+    const title = document.createElement('h3');
+    title.textContent = 'First In First Out (FIFO) Demo';
+    animationContainer.appendChild(title);
+    
+    // Display reference string
+    const refStringDisplay = document.createElement('div');
+    refStringDisplay.className = 'ref-string-display';
+    
+    demoReferenceString.forEach((num, idx) => {
+        const numElement = document.createElement('div');
+        numElement.className = 'ref-number';
+        numElement.textContent = num;
+        refStringDisplay.appendChild(numElement);
+    });
+    
+    animationContainer.appendChild(refStringDisplay);
+    
+    // Create frame display
+    const frameDisplayContainer = document.createElement('div');
+    frameDisplayContainer.className = 'frame-display-container';
+    animationContainer.appendChild(frameDisplayContainer);
+    
+    // Create initial frame rows
+    for (let i = 0; i < demoNumFrames; i++) {
+        const frameRow = document.createElement('div');
+        frameRow.className = 'demo-frame-row';
+        
+        const frameLabel = document.createElement('div');
+        frameLabel.className = 'demo-frame-label';
+        frameLabel.textContent = `Frame ${i + 1}:`;
+        frameRow.appendChild(frameLabel);
+        
+        const frameContent = document.createElement('div');
+        frameContent.className = 'frame empty';
+        frameContent.textContent = '-';
+        frameContent.id = `demo-frame-${i}`;
+        frameRow.appendChild(frameContent);
+        
+        frameDisplayContainer.appendChild(frameRow);
     }
+    
+    // Disable buttons during demo
+    runBtn.disabled = true;
+    resetBtn.disabled = true;
+    editBtn.disabled = true;
+    fifoDemoBtn.disabled = true;
+    
+    updateStatus('FIFO Demo Running', 'running');
+    
+    // Simulate each step with animation
+    demoReferenceString.forEach((page, index) => {
+        setTimeout(() => {
+            // Highlight current reference
+            document.querySelectorAll('.ref-number').forEach((el, i) => {
+                el.classList.toggle('active', i === index);
+            });
+            
+            document.getElementById('currentRef').textContent = page;
+            
+            let isHit = false;
+            let replacedIndex = -1;
+            let replacedPage = null;
+            
+            // Check for hit
+            if (demoFrames.includes(page)) {
+                demoHits++;
+                isHit = true;
+                document.getElementById('pageHits').textContent = demoHits;
+            } else {
+                demoFaults++;
+                document.getElementById('pageFaults').textContent = demoFaults;
+                
+                // FIFO replacement
+                if (demoFrames.includes(null)) {
+                    // Fill empty frame
+                    const emptyIndex = demoFrames.indexOf(null);
+                    demoFrames[emptyIndex] = page;
+                    demoFifoQueue.push(emptyIndex);
+                    replacedIndex = emptyIndex;
+                } else {
+                    // Replace oldest
+                    const oldestIndex = demoFifoQueue.shift();
+                    replacedPage = demoFrames[oldestIndex];
+                    demoFrames[oldestIndex] = page;
+                    demoFifoQueue.push(oldestIndex);
+                    replacedIndex = oldestIndex;
+                }
+            }
+            
+            // Update frame displays with animation
+            for (let i = 0; i < demoNumFrames; i++) {
+                const frameElement = document.getElementById(`demo-frame-${i}`);
+                
+                // Clear previous classes
+                frameElement.className = 'frame';
+                
+                if (demoFrames[i] === null) {
+                    frameElement.classList.add('empty');
+                    frameElement.textContent = '-';
+                } else {
+                    frameElement.textContent = demoFrames[i];
+                    
+                    if (isHit && demoFrames[i] === page) {
+                        frameElement.classList.add('hit');
+                        
+                        // Animate hit
+                        const activeRef = document.querySelector('.ref-number.active');
+                        if (activeRef) {
+                            animatePageMovement(page, activeRef, frameElement, false);
+                        }
+                    } else if (!isHit && i === replacedIndex) {
+                        frameElement.classList.add('fault');
+                        
+                        // Animate fault/replacement
+                        const activeRef = document.querySelector('.ref-number.active');
+                        if (activeRef) {
+                            animatePageMovement(page, activeRef, frameElement, true);
+                        }
+                    }
+                }
+            }
+            
+            // If demo is complete, re-enable buttons
+            if (index === demoReferenceString.length - 1) {
+                setTimeout(() => {
+                    runBtn.disabled = false;
+                    resetBtn.disabled = false;
+                    editBtn.disabled = false;
+                    fifoDemoBtn.disabled = false;
+                    updateStatus('FIFO Demo Complete', 'complete');
+                    
+                    // Add demo summary
+                    const hitRatio = ((demoHits / (demoHits + demoFaults)) * 100).toFixed(2);
+                    const summaryDiv = document.createElement('div');
+                    summaryDiv.className = 'summary';
+                    summaryDiv.innerHTML = `
+                        <h3>FIFO Demo Summary</h3>
+                        <p>Total References: ${demoReferenceString.length}</p>
+                        <p>Page Hits: ${demoHits}</p>
+                        <p>Page Faults: ${demoFaults}</p>
+                        <p>Hit Ratio: ${hitRatio}%</p>
+                    `;
+                    animationContainer.appendChild(summaryDiv);
+                }, 1000);
+            }
+        }, index * 1500); // 1.5 second delay between steps
+    });
 }
