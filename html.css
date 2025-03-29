@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platech (Demand-Paging Simulator)</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Front Page -->
+    <div class="front-page" id="frontPage">
+        <h1>Platech (Demand-Paging Simulator)</h1>
+        <div class="developer-names">
+            <h2>Developed by:</h2>
+            <ul>
+                <li>Jazelle Tamayo</li>
+                <li>Stephanie Echavez</li>
+                <li>Karylle Catubay</li>
+                <li>Paul Alarba</li>
+            </ul>
+        </div>
+        <button class="get-started-btn" id="getStartedBtn">Get Started</button>
+    </div>
+    
+    <!-- Main Page -->
+    <div class="main-page" id="mainPage">
+        <div class="header">
+            <h1>Platech (Demand-Paging Simulator)</h1>
+        </div>
+        
+        <div class="input-section">
+            <div class="input-group">
+                <label for="referenceString">Reference String (space-separated numbers):</label>
+                <input type="text" id="referenceString" placeholder="e.g., 1 2 3 4 2 1 5">
+            </div>
+            
+            <div class="input-group">
+                <label for="numFrames">Number of Frames:</label>
+                <input type="number" id="numFrames" min="1" value="3">
+            </div>
+            
+            <div class="input-group">
+                <label for="algorithm">Replacement Algorithm:</label>
+                <select id="algorithm">
+                    <option value="fifo">FIFO (First-In-First-Out)</option>
+                    <option value="lru">LRU (Least Recently Used)</option>
+                    <option value="optimal">Optimal</option>
+                </select>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-primary" id="runBtn">Run Simulation</button>
+                <button class="btn btn-secondary" id="stopBtn" disabled>Stop</button>
+                <button class="btn btn-secondary" id="continueBtn" disabled>Continue</button>
+                <button class="btn btn-secondary" id="resetBtn">Reset</button>
+            </div>
+        </div>
+        
+        <div class="status-bar" id="statusBar">Ready</div>
+        
+        <!-- Updated Results Display -->
+        <div class="simulation-display">
+            <h2>Simulation Results</h2>
+            
+            <!-- Results Summary -->
+            <div class="results-summary">
+                <div class="counter-container">
+                    <div class="counter hit-counter">
+                        <h3>Page Hits</h3>
+                        <span id="hitCounter">0</span>
+                    </div>
+                    <div class="counter fault-counter">
+                        <h3>Page Faults</h3>
+                        <span id="faultCounter">0</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="legend">
+                <div class
